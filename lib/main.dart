@@ -1,7 +1,13 @@
+// pdfish/lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:pdfish/screens/home_screen.dart';
+import 'package:intl/date_symbol_data_local.dart'; // Importar
 
-void main() {
+void main() async { // 1. Transformar main em async
+  // 2. Garantir que os bindings do Flutter estão inicializados antes de qualquer plugin
+  WidgetsFlutterBinding.ensureInitialized();
+  // 3. Inicializar os dados de formatação de data para pt_BR (Português Brasil)
+  await initializeDateFormatting('pt_BR', null);
   runApp(const PdfishApp());
 }
 
@@ -13,7 +19,7 @@ class PdfishApp extends StatelessWidget {
     return MaterialApp(
       title: 'Pdfish',
       theme: ThemeData(
-        primarySwatch: Colors.red, // Cor tema do app
+        primarySwatch: Colors.red,
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.redAccent,
           brightness: Brightness.light,
@@ -21,7 +27,7 @@ class PdfishApp extends StatelessWidget {
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.redAccent,
-          foregroundColor: Colors.white, // Cor do texto e ícones na AppBar
+          foregroundColor: Colors.white,
         ),
         floatingActionButtonTheme: const FloatingActionButtonThemeData(
           backgroundColor: Colors.redAccent,
@@ -30,11 +36,11 @@ class PdfishApp extends StatelessWidget {
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.redAccent,
-            foregroundColor: Colors.white, // Cor do texto do botão
+            foregroundColor: Colors.white,
           ),
         ),
       ),
-      debugShowCheckedModeBanner: false, // Remove o banner de debug
+      debugShowCheckedModeBanner: false,
       home: const HomeScreen(),
     );
   }
