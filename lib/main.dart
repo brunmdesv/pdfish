@@ -83,6 +83,23 @@ class PdfishApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
+        // Aplicando a fonte personalizada em todo o aplicativo
+        fontFamily: 'WDXLLubrifontTC',
+        // Definindo tamanhos de texto menores para todo o aplicativo
+        textTheme: const TextTheme(
+          displayLarge: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+          displayMedium: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          displaySmall: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          headlineLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          headlineMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          headlineSmall: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          titleLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          titleMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          titleSmall: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          bodyLarge: TextStyle(fontSize: 15),
+          bodyMedium: TextStyle(fontSize: 14),
+          bodySmall: TextStyle(fontSize: 12),
+        ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.redAccent,
           foregroundColor: Colors.white,

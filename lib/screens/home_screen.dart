@@ -13,15 +13,46 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final RecentPdfsService _recentPdfsService = RecentPdfsService();
   List<RecentPdfItem> _recentPdfsList = [];
   bool _isLoadingRecents = true;
+  late AnimationController _fabController;
+  late AnimationController _listController;
+  late Animation<double> _fabAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
     _loadRecentPdfs();
+    _fabController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _listController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fabAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fabController, curve: Curves.elasticOut),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _listController, curve: Curves.easeOutCubic));
+    
+    Future.delayed(const Duration(milliseconds: 200), () {
+      _fabController.forward();
+      _listController.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _fabController.dispose();
+    _listController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRecentPdfs() async {
@@ -46,15 +77,19 @@ class _HomeScreenState extends State<HomeScreen> {
       print("Erro ao carregar recentes: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao carregar PDFs recentes: $e')),
+          SnackBar(
+            content: Text('Erro ao carregar PDFs recentes: $e'),
+            backgroundColor: const Color(0xFFFF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.all(16),
+          ),
         );
       }
     }
   }
 
   Future<void> _openPdfViewer(RecentPdfItem itemToOpen, {String? knownPassword}) async {
-    // Se uma senha é explicitamente conhecida (ex: vinda do picker + visualizador), usa ela.
-    // Senão, tenta carregar do secure storage.
     String? passwordForViewer = knownPassword;
     if (passwordForViewer == null || passwordForViewer.isEmpty) {
         passwordForViewer = await _recentPdfsService.getPasswordForRecentItem(itemToOpen);
@@ -64,7 +99,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (mounted) {
-      final returnedPassword = await Navigator.push<String?>( // Espera String?
+      // Simplificando a animação para evitar travamentos
+      final returnedPassword = await Navigator.push<String?>(
         context,
         MaterialPageRoute(
           builder: (context) => PdfViewerScreen(
@@ -76,38 +112,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       print("HomeScreen: PdfViewerScreen retornou: '${returnedPassword ?? "null"}' para ${itemToOpen.fileName}");
 
-      // Se retornou uma string (pode ser vazia se a senha foi "esquecida" ou PDF não tinha senha)
-      // ou null (se voltou por gesto do sistema e o PDF abriu com sucesso com senha inicial/sem senha)
       String? finalPasswordToSave;
       if (returnedPassword != null) {
         finalPasswordToSave = returnedPassword.isNotEmpty ? returnedPassword : null;
       } else {
-        // Se voltou por gesto (null retornado) e o PDF tinha uma senha inicial que funcionou,
-        // devemos manter essa senha.
-        // Isso é complicado porque a PdfViewerScreen não "sabe" como foi fechada.
-        // Uma melhoria seria a PdfViewerScreen sempre retornar a senha que funcionou,
-        // mesmo que seja a inicial. O PopScope customizado ajuda nisso.
-        // Por ora, se retornou null, e uma senha inicial foi tentada, podemos re-buscar.
-        // Mas a lógica atual do PdfViewerScreen com botão de voltar customizado deve retornar a senha.
-        // Se ainda for null, significa que o PDF não precisou de senha ou a senha inicial não funcionou
-        // e o usuário não forneceu uma nova.
-         finalPasswordToSave = passwordForViewer; // Re-usa a senha que tentamos inicialmente.
-                                                 // Se essa senha abriu o PDF, é a correta.
-                                                 // Se não abriu e o usuário não forneceu nova, é null.
-                                                 // Se `returnedPassword` foi `""`, significa que o usuário
-                                                 // limpou/esqueceu a senha.
+         finalPasswordToSave = passwordForViewer;
       }
 
-
-      // Atualiza o item nos recentes e sua senha no secure storage
       await _recentPdfsService.addOrUpdateRecentPdf(
-        itemToOpen.filePath, // filePath pode ter sido atualizado se o arquivo foi re-selecionado
+        itemToOpen.filePath,
         itemToOpen.fileName,
         itemToOpen.originalIdentifier,
         itemToOpen.fileSize,
         finalPasswordToSave,
       );
-      await _loadRecentPdfs(); // Atualiza a UI da lista de recentes
+      await _loadRecentPdfs();
     }
   }
 
@@ -129,12 +148,12 @@ class _HomeScreenState extends State<HomeScreen> {
           lastOpened: DateTime.now()
         );
 
-        // Tenta carregar uma senha existente para este arquivo ANTES de abrir o visualizador
         String? existingPassword = await _recentPdfsService.getPasswordForRecentItem(tempItemForInfo);
         print("HomeScreen: Para PDF do picker '${file.name}', senha existente no storage: '${existingPassword ?? "nenhuma"}'");
 
         if (mounted) {
-           final returnedPassword = await Navigator.push<String?>( // Espera String?
+           // Simplificando a animação para evitar travamentos
+           final returnedPassword = await Navigator.push<String?>(
             context,
             MaterialPageRoute(
               builder: (context) => PdfViewerScreen(
@@ -147,39 +166,45 @@ class _HomeScreenState extends State<HomeScreen> {
           print("HomeScreen: PdfViewerScreen (após picker) retornou: '${returnedPassword ?? "null"}' para ${file.name}");
 
           String? finalPasswordToSave;
-          if (returnedPassword != null) { // Usuário interagiu com diálogo ou voltou com botão custom
+          if (returnedPassword != null) {
             finalPasswordToSave = returnedPassword.isNotEmpty ? returnedPassword : null;
-          } else { // Voltou por gesto do sistema
-            // Se uma senha existente funcionou, ela deve ser mantida.
-            // Se não havia senha existente e o PDF abriu, é null.
-            // Se havia senha existente mas falhou e usuário não digitou nova, é null.
-            finalPasswordToSave = existingPassword; // Melhor palpite, mas PdfViewerScreen deveria ser a fonte da verdade.
-                                                // A lógica do botão de voltar customizado no PdfViewerScreen
-                                                // é crucial aqui.
+          } else {
+            finalPasswordToSave = existingPassword;
           }
           
-          // Salva/Atualiza o item recente e sua senha no secure storage
           await _recentPdfsService.addOrUpdateRecentPdf(
-            tempItemForInfo.filePath, // O filePath do cache atual
+            tempItemForInfo.filePath,
             tempItemForInfo.fileName,
             tempItemForInfo.originalIdentifier,
             tempItemForInfo.fileSize,
             finalPasswordToSave,
           );
-          await _loadRecentPdfs(); // Atualiza a lista de recentes na UI
+          await _loadRecentPdfs();
         }
 
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Nenhum arquivo PDF selecionado.')),
+            SnackBar(
+              content: const Text('Nenhum arquivo PDF selecionado.'),
+              backgroundColor: const Color(0xFFFF9500),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              margin: const EdgeInsets.all(16),
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao selecionar o arquivo: $e')),
+          SnackBar(
+            content: Text('Erro ao selecionar o arquivo: $e'),
+            backgroundColor: const Color(0xFFFF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.all(16),
+          ),
         );
       }
       print("Erro ao selecionar arquivo: $e");
@@ -187,128 +212,510 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _formatRecentDate(DateTime dt) {
-    return DateFormat('dd/MM/yyyy | HH\'h\'mm\'min\'', 'pt_BR').format(dt);
+    final now = DateTime.now();
+    final difference = now.difference(dt);
+    
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        if (difference.inMinutes == 0) {
+          return 'Agora mesmo';
+        }
+        return 'Há ${difference.inMinutes}min';
+      }
+      return 'Há ${difference.inHours}h';
+    } else if (difference.inDays == 1) {
+      return 'Ontem';
+    } else if (difference.inDays < 7) {
+      return 'Há ${difference.inDays} dias';
+    } else {
+      return DateFormat('dd/MM/yyyy', 'pt_BR').format(dt);
+    }
+  }
+
+  String _formatFileSize(int? bytes) {
+  if (bytes == null) return 'Tamanho desconhecido';
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pdfish'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF000000),
+                Color(0xFF111111),
+                Color(0xFF222222),
+              ],
+            ),
+          ),
+        ),
+        centerTitle: true,
+        title: const Text(
+          'Documentos Recentes',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            letterSpacing: -0.3,
+          ),
+        ),
         actions: [
           if (_recentPdfsList.isNotEmpty && !_isLoadingRecents)
-            IconButton(
-              icon: const Icon(Icons.delete_sweep_outlined),
-              tooltip: 'Limpar Todos os Recentes',
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      title: const Text('Limpar Recentes?'),
-                      content: const Text(
-                          'Isso removerá todos os PDFs da lista e suas senhas salvas.'),
-                      actions: <Widget>[
-                        TextButton(
-                          child: const Text('Cancelar'),
-                          onPressed: () => Navigator.of(context).pop(false),
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withOpacity(0.2)),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white),
+                tooltip: 'Limpar Todos os Recentes',
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    barrierColor: Colors.black.withOpacity(0.8),
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        backgroundColor: const Color(0xFF1a1a1a),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        title: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF9500).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9500)),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text('Limpar Recentes?', style: TextStyle(color: Colors.white)),
+                          ],
                         ),
-                        TextButton(
-                          style: TextButton.styleFrom(foregroundColor: Colors.red),
-                          child: const Text('Limpar Tudo'),
-                          onPressed: () => Navigator.of(context).pop(true),
+                        content: const Text(
+                          'Isso removerá todos os PDFs da lista e suas senhas salvas.',
+                          style: TextStyle(fontSize: 16, color: Colors.white70),
                         ),
-                      ],
-                    );
-                  },
-                );
-                if (confirm == true) {
-                  await _recentPdfsService.clearAllRecentPdfs();
-                  _loadRecentPdfs();
-                }
-              },
+                        actions: <Widget>[
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+                            onPressed: () => Navigator.of(context).pop(false),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF4444), Color(0xFFCC0000)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('Limpar Tudo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                              onPressed: () => Navigator.of(context).pop(true),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                  if (confirm == true) {
+                    await _recentPdfsService.clearAllRecentPdfs();
+                    _loadRecentPdfs();
+                  }
+                },
+              ),
             ),
         ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            child: _isLoadingRecents
-                ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
-                : _recentPdfsList.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.find_in_page_outlined, size: 80, color: Colors.grey[400]),
-                              const SizedBox(height: 20),
-                              Text(
-                                'Nenhum PDF aberto recentemente.',
-                                style: TextStyle(fontSize: 17, color: Colors.grey[700]),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Toque no botão + abaixo para selecionar e abrir um arquivo PDF do seu dispositivo.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 15, color: Colors.grey[600]),
-                              ),
-                            ],
-                          ),
+      drawer: Drawer(
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF000000),
+                Color(0xFF111111),
+                Color(0xFF222222),
+                Color(0xFF1a1a1a),
+              ],
+              stops: [0.0, 0.3, 0.7, 1.0],
+            ),
+          ),
+          child: Column(
+            children: [
+              DrawerHeader(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0xFFFF6B6B),
+                      blurRadius: 12,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset('assets/images/logo.png', width: 60, height: 60),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'PDFish',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
                         ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(top: 8.0, left: 8.0, right: 8.0, bottom: 80.0),
-                        itemCount: _recentPdfsList.length,
-                        itemBuilder: (context, index) {
-                          final recentItem = _recentPdfsList[index];
-                          return Card(
-                            elevation: 2,
-                            margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
-                            child: ListTile(
-                              leading: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 36),
-                              title: Text(
-                                recentItem.fileName,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                              subtitle: Text(_formatRecentDate(recentItem.lastOpened)),
-                              onTap: () async {
-                                final file = File(recentItem.filePath);
-                                if (await file.exists()) {
-                                  _openPdfViewer(recentItem);
-                                } else {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Arquivo "${recentItem.fileName}" não encontrado no cache. Pode ter sido limpo.'),
-                                        action: SnackBarAction(
-                                          label: 'REMOVER DA LISTA',
-                                          textColor: Colors.amber,
-                                          onPressed: () async {
-                                            await _recentPdfsService.removeSpecificRecent(recentItem);
-                                            _loadRecentPdfs();
-                                          },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Adicione aqui os itens do menu futuramente
+              ListTile(
+                leading: const Icon(Icons.home, color: Colors.white),
+                title: const Text('Início', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings, color: Colors.white),
+                title: const Text('Configurações', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Navegação futura para tela de configurações
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF000000),
+              Color(0xFF111111),
+              Color(0xFF222222),
+              Color(0xFF1a1a1a),
+            ],
+            stops: [0.0, 0.3, 0.7, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Content
+              Expanded(
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: FadeTransition(
+                    opacity: _listController,
+                    child: _isLoadingRecents
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Color(0xFFFF6B6B),
+                                      strokeWidth: 3,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                Text(
+                                  'Carregando seus documentos...',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _recentPdfsList.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(40.0),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        width: 120,
+                                        height: 120,
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              const Color(0xFFFF6B6B).withOpacity(0.2),
+                                              const Color(0xFFFF8E53).withOpacity(0.1),
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                                            width: 2,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.folder_open_outlined,
+                                          size: 60,
+                                          color: Color(0xFFFF6B6B),
                                         ),
                                       ),
-                                    );
-                                  }
-                                }
-                              },
-                            ),
-                          );
-                        },
-                      ),
+                                      const SizedBox(height: 32),
+                                      const Text(
+                                        'Nenhum documento ainda',
+                                        style: TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                          letterSpacing: -0.3,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Comece sua jornada selecionando um arquivo PDF do seu dispositivo. Seus documentos aparecerão aqui para acesso rápido.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          color: Colors.white.withOpacity(0.7),
+                                          height: 1.6,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(24, 0, 24, 120),
+                                itemCount: _recentPdfsList.length,
+                                itemBuilder: (context, index) {
+                                  final recentItem = _recentPdfsList[index];
+                                  return TweenAnimationBuilder<double>(
+                                    tween: Tween(begin: 0.0, end: 1.0),
+                                    duration: Duration(milliseconds: 300 + (index * 100)),
+                                    curve: Curves.easeOutCubic,
+                                    builder: (context, value, child) {
+                                      return Transform.translate(
+                                        offset: Offset(0, 30 * (1 - value)),
+                                        child: Opacity(
+                                          opacity: value,
+                                          child: Container(
+                                            margin: const EdgeInsets.only(bottom: 16),
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  Colors.white.withOpacity(0.1),
+                                                  Colors.white.withOpacity(0.05),
+                                                ],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ),
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(
+                                                color: Colors.white.withOpacity(0.1),
+                                                width: 1,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withOpacity(0.3),
+                                                  blurRadius: 20,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              child: InkWell(
+                                                borderRadius: BorderRadius.circular(20),
+                                                onTap: () async {
+                                                  final file = File(recentItem.filePath);
+                                                  if (await file.exists()) {
+                                                    _openPdfViewer(recentItem);
+                                                  } else {
+                                                    if (mounted) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text('Arquivo "${recentItem.fileName}" não encontrado no cache.'),
+                                                          backgroundColor: const Color(0xFFFF9500),
+                                                          behavior: SnackBarBehavior.floating,
+                                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                                          margin: const EdgeInsets.all(16),
+                                                          action: SnackBarAction(
+                                                            label: 'REMOVER',
+                                                            textColor: Colors.white,
+                                                            onPressed: () async {
+                                                              await _recentPdfsService.removeSpecificRecent(recentItem);
+                                                              _loadRecentPdfs();
+                                                            },
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }
+                                                  }
+                                                },
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(20),
+                                                  child: Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Text(
+                                                              recentItem.fileName,
+                                                              maxLines: 2,
+                                                              overflow: TextOverflow.ellipsis,
+                                                              style: const TextStyle(
+                                                                fontSize: 18,
+                                                                fontWeight: FontWeight.w600,
+                                                                color: Colors.white,
+                                                                letterSpacing: -0.2,
+                                                              ),
+                                                            ),
+                                                            const SizedBox(height: 8),
+                                                            Row(
+                                                              children: [
+                                                                Container(
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                                  decoration: BoxDecoration(
+                                                                    color: const Color(0xFFFF6B6B).withOpacity(0.2),
+                                                                    borderRadius: BorderRadius.circular(8),
+                                                                  ),
+                                                                  child: Text(
+                                                                    _formatRecentDate(recentItem.lastOpened),
+                                                                    style: const TextStyle(
+                                                                      fontSize: 12,
+                                                                      color: Color(0xFFFF6B6B),
+                                                                      fontWeight: FontWeight.w500,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(width: 12),
+                                                                Container(
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                                  decoration: BoxDecoration(
+                                                                    color: Colors.white.withOpacity(0.1),
+                                                                    borderRadius: BorderRadius.circular(8),
+                                                                  ),
+                                                                  child: Text(
+                                                                    _formatFileSize(recentItem.fileSize),
+                                                                    style: TextStyle(
+                                                                      fontSize: 12,
+                                                                      color: Colors.white.withOpacity(0.7),
+                                                                      fontWeight: FontWeight.w500,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      Container(
+                                                        padding: const EdgeInsets.all(8),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.white.withOpacity(0.1),
+                                                          borderRadius: BorderRadius.circular(12),
+                                                        ),
+                                                        child: Icon(
+                                                          Icons.arrow_forward_ios,
+                                                          color: Colors.white.withOpacity(0.7),
+                                                          size: 16,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _pickAndOpenPdf,
-        tooltip: 'Abrir PDF',
-        child: const Icon(Icons.add),
+      floatingActionButton: ScaleTransition(
+        scale: _fabAnimation,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFF6B6B).withOpacity(0.4),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: FloatingActionButton.extended(
+            onPressed: _pickAndOpenPdf,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            icon: const Icon(Icons.add, color: Colors.white, size: 24),
+            label: const Text(
+              'Abrir PDF',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
