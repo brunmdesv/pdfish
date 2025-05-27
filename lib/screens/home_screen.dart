@@ -1,4 +1,3 @@
-// pdfish/lib/screens/home_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -53,24 +52,62 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openPdfViewer(RecentPdfItem itemToOpen) async {
-    // Adiciona/Atualiza na lista de recentes ANTES de abrir
-    // Usamos os dados do itemToOpen para garantir consistência na atualização
-    await _recentPdfsService.addOrUpdateRecentPdf(
-      itemToOpen.filePath, // Use o filePath (cache) do item salvo para abrir
-      itemToOpen.fileName,
-      itemToOpen.originalIdentifier,
-      itemToOpen.fileSize,
-    );
-    await _loadRecentPdfs(); // Atualiza a UI da lista de recentes
+  Future<void> _openPdfViewer(RecentPdfItem itemToOpen, {String? knownPassword}) async {
+    // Se uma senha é explicitamente conhecida (ex: vinda do picker + visualizador), usa ela.
+    // Senão, tenta carregar do secure storage.
+    String? passwordForViewer = knownPassword;
+    if (passwordForViewer == null || passwordForViewer.isEmpty) {
+        passwordForViewer = await _recentPdfsService.getPasswordForRecentItem(itemToOpen);
+        print("HomeScreen: Carregada senha '${passwordForViewer ?? "nenhuma"}' do secure storage para ${itemToOpen.fileName}");
+    } else {
+        print("HomeScreen: Usando senha conhecida '$passwordForViewer' para ${itemToOpen.fileName}");
+    }
 
     if (mounted) {
-      Navigator.push(
+      final returnedPassword = await Navigator.push<String?>( // Espera String?
         context,
         MaterialPageRoute(
-          builder: (context) => PdfViewerScreen(filePath: itemToOpen.filePath), // Abre usando o filePath (cache)
+          builder: (context) => PdfViewerScreen(
+            filePath: itemToOpen.filePath,
+            initialPasswordAttempt: passwordForViewer,
+          ),
         ),
       );
+
+      print("HomeScreen: PdfViewerScreen retornou: '${returnedPassword ?? "null"}' para ${itemToOpen.fileName}");
+
+      // Se retornou uma string (pode ser vazia se a senha foi "esquecida" ou PDF não tinha senha)
+      // ou null (se voltou por gesto do sistema e o PDF abriu com sucesso com senha inicial/sem senha)
+      String? finalPasswordToSave;
+      if (returnedPassword != null) {
+        finalPasswordToSave = returnedPassword.isNotEmpty ? returnedPassword : null;
+      } else {
+        // Se voltou por gesto (null retornado) e o PDF tinha uma senha inicial que funcionou,
+        // devemos manter essa senha.
+        // Isso é complicado porque a PdfViewerScreen não "sabe" como foi fechada.
+        // Uma melhoria seria a PdfViewerScreen sempre retornar a senha que funcionou,
+        // mesmo que seja a inicial. O PopScope customizado ajuda nisso.
+        // Por ora, se retornou null, e uma senha inicial foi tentada, podemos re-buscar.
+        // Mas a lógica atual do PdfViewerScreen com botão de voltar customizado deve retornar a senha.
+        // Se ainda for null, significa que o PDF não precisou de senha ou a senha inicial não funcionou
+        // e o usuário não forneceu uma nova.
+         finalPasswordToSave = passwordForViewer; // Re-usa a senha que tentamos inicialmente.
+                                                 // Se essa senha abriu o PDF, é a correta.
+                                                 // Se não abriu e o usuário não forneceu nova, é null.
+                                                 // Se `returnedPassword` foi `""`, significa que o usuário
+                                                 // limpou/esqueceu a senha.
+      }
+
+
+      // Atualiza o item nos recentes e sua senha no secure storage
+      await _recentPdfsService.addOrUpdateRecentPdf(
+        itemToOpen.filePath, // filePath pode ter sido atualizado se o arquivo foi re-selecionado
+        itemToOpen.fileName,
+        itemToOpen.originalIdentifier,
+        itemToOpen.fileSize,
+        finalPasswordToSave,
+      );
+      await _loadRecentPdfs(); // Atualiza a UI da lista de recentes
     }
   }
 
@@ -79,37 +116,59 @@ class _HomeScreenState extends State<HomeScreen> {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf'],
-        // withData: false, // Não precisamos dos bytes do arquivo aqui, apenas metadados
-        // withReadStream: false, // Também não
       );
 
       if (result != null && result.files.single.path != null) {
         final PlatformFile file = result.files.single;
-        final filePath = file.path!; // Caminho do cache
-        final fileName = file.name;
-        final originalIdentifier = file.identifier; // Pode ser null
-        final fileSize = file.size;
-
-        print("FilePicker result: name='${file.name}', path='${file.path}', identifier='${file.identifier}', size=${file.size}");
-
-        // Cria um RecentPdfItem temporário para passar para _openPdfViewer
-        // ou diretamente para _recentPdfsService.addOrUpdateRecentPdf
-        await _recentPdfsService.addOrUpdateRecentPdf(
-          filePath,
-          fileName,
-          originalIdentifier,
-          fileSize,
+        
+        final tempItemForInfo = RecentPdfItem(
+          filePath: file.path!,
+          fileName: file.name,
+          originalIdentifier: file.identifier,
+          fileSize: file.size,
+          lastOpened: DateTime.now()
         );
-        await _loadRecentPdfs(); // Atualiza a UI
+
+        // Tenta carregar uma senha existente para este arquivo ANTES de abrir o visualizador
+        String? existingPassword = await _recentPdfsService.getPasswordForRecentItem(tempItemForInfo);
+        print("HomeScreen: Para PDF do picker '${file.name}', senha existente no storage: '${existingPassword ?? "nenhuma"}'");
 
         if (mounted) {
-          Navigator.push(
+           final returnedPassword = await Navigator.push<String?>( // Espera String?
             context,
             MaterialPageRoute(
-              builder: (context) => PdfViewerScreen(filePath: filePath),
+              builder: (context) => PdfViewerScreen(
+                filePath: tempItemForInfo.filePath,
+                initialPasswordAttempt: existingPassword,
+              ),
             ),
           );
+
+          print("HomeScreen: PdfViewerScreen (após picker) retornou: '${returnedPassword ?? "null"}' para ${file.name}");
+
+          String? finalPasswordToSave;
+          if (returnedPassword != null) { // Usuário interagiu com diálogo ou voltou com botão custom
+            finalPasswordToSave = returnedPassword.isNotEmpty ? returnedPassword : null;
+          } else { // Voltou por gesto do sistema
+            // Se uma senha existente funcionou, ela deve ser mantida.
+            // Se não havia senha existente e o PDF abriu, é null.
+            // Se havia senha existente mas falhou e usuário não digitou nova, é null.
+            finalPasswordToSave = existingPassword; // Melhor palpite, mas PdfViewerScreen deveria ser a fonte da verdade.
+                                                // A lógica do botão de voltar customizado no PdfViewerScreen
+                                                // é crucial aqui.
+          }
+          
+          // Salva/Atualiza o item recente e sua senha no secure storage
+          await _recentPdfsService.addOrUpdateRecentPdf(
+            tempItemForInfo.filePath, // O filePath do cache atual
+            tempItemForInfo.fileName,
+            tempItemForInfo.originalIdentifier,
+            tempItemForInfo.fileSize,
+            finalPasswordToSave,
+          );
+          await _loadRecentPdfs(); // Atualiza a lista de recentes na UI
         }
+
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -148,7 +207,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     return AlertDialog(
                       title: const Text('Limpar Recentes?'),
                       content: const Text(
-                          'Isso removerá todos os PDFs da lista de abertos recentemente.'),
+                          'Isso removerá todos os PDFs da lista e suas senhas salvas.'),
                       actions: <Widget>[
                         TextButton(
                           child: const Text('Cancelar'),
@@ -179,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? const Center(child: CircularProgressIndicator(color: Colors.redAccent))
                 : _recentPdfsList.isEmpty
                     ? Center(
-                        child: Padding( // Adicionado Padding para centralizar melhor o conteúdo
+                        child: Padding(
                           padding: const EdgeInsets.all(24.0),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -218,10 +277,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               subtitle: Text(_formatRecentDate(recentItem.lastOpened)),
                               onTap: () async {
-                                // Verificar se o arquivo no CAMINHO DO CACHE ainda existe
                                 final file = File(recentItem.filePath);
                                 if (await file.exists()) {
-                                  _openPdfViewer(recentItem); // Passa o RecentPdfItem inteiro
+                                  _openPdfViewer(recentItem);
                                 } else {
                                   if (mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -231,11 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           label: 'REMOVER DA LISTA',
                                           textColor: Colors.amber,
                                           onPressed: () async {
-                                            await _recentPdfsService.removeSpecificRecent(
-                                              recentItem.fileName,
-                                              recentItem.originalIdentifier,
-                                              recentItem.fileSize
-                                            );
+                                            await _recentPdfsService.removeSpecificRecent(recentItem);
                                             _loadRecentPdfs();
                                           },
                                         ),

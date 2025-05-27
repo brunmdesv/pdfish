@@ -1,11 +1,18 @@
 // pdfish/lib/services/recent_pdfs_service.dart
-import 'dart:convert'; // Para jsonEncode e jsonDecode
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // Importar
 import 'package:pdfish/models/recent_pdf_item.dart';
 
 class RecentPdfsService {
   static const String _recentsKey = 'recent_pdfs_list';
-  static const int _maxRecents = 15; // Aumentei um pouco, opcional
+  static const int _maxRecents = 15;
+  final _secureStorage = const FlutterSecureStorage(); // Instanciar
+
+  // Chave para o secure storage prefixada para evitar colisões
+  String _getSecureStorageKey(RecentPdfItem item) {
+    return "pdf_password_${item.uniqueKeyForPersistence}";
+  }
 
   Future<List<RecentPdfItem>> getRecentPdfs() async {
     final prefs = await SharedPreferences.getInstance();
@@ -14,91 +21,108 @@ class RecentPdfsService {
     if (recentPdfsJson == null) {
       return [];
     }
-
     try {
       return recentPdfsJson
           .map((jsonString) => RecentPdfItem.fromJson(jsonDecode(jsonString) as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print("Erro ao decodificar PDFs recentes: $e");
+      print("Erro ao decodificar PDFs recentes (shared_preferences): $e");
       await prefs.remove(_recentsKey);
       return [];
     }
   }
 
-  // Modificado para aceitar path, name, e opcionalmente identifier e size
   Future<void> addOrUpdateRecentPdf(
-    String filePath, // O caminho do cache, ainda necessário para abrir
+    String filePath, // Caminho do cache atual
     String fileName,
-    String? originalIdentifier, // URI do arquivo original, se disponível
-    int? fileSize // Tamanho do arquivo, para desambiguação se identifier não estiver disponível
+    String? originalIdentifier,
+    int? fileSize,
+    String? password, // Nova adição: senha, se fornecida com sucesso
   ) async {
     final prefs = await SharedPreferences.getInstance();
     List<RecentPdfItem> recents = await getRecentPdfs();
 
-    // Chave de identificação única: prioriza originalIdentifier, depois uma combinação de fileName e fileSize
-    // Se fileSize não for fornecido, apenas fileName.
-    // A ideia é que fileName + fileSize é menos provável de colidir do que apenas fileName.
-    final String uniqueKey = originalIdentifier ?? (fileSize != null ? "${fileName}_$fileSize" : fileName);
-
-    print("Tentando adicionar/atualizar. Chave única: '$uniqueKey', Nome: '$fileName', Path cache: '$filePath'");
-    print("Lista atual (chaves únicas): ${recents.map((e) => e.originalIdentifier ?? (e.fileSize != null ? "${e.fileName}_${e.fileSize}" : e.fileName)).toList()}");
-
-    // Remove o item se já existir (baseado na chave única) para atualizá-lo e movê-lo para o topo
-    final initialLength = recents.length;
-    recents.removeWhere((item) {
-      final String itemKey = item.originalIdentifier ?? (item.fileSize != null ? "${item.fileName}_${item.fileSize}" : item.fileName);
-      return itemKey == uniqueKey;
-    });
-
-    if (recents.length < initialLength) {
-      print("Item existente com chave única '$uniqueKey' removido para atualização.");
-    } else {
-      print("Nenhum item existente com chave única '$uniqueKey' encontrado para remover.");
-    }
-
     final newItem = RecentPdfItem(
-      filePath: filePath, // Sempre salve o caminho do cache para abrir
+      filePath: filePath,
       fileName: fileName,
       lastOpened: DateTime.now(),
-      originalIdentifier: originalIdentifier, // Salva o identifier original
-      fileSize: fileSize, // Salva o tamanho do arquivo
+      originalIdentifier: originalIdentifier,
+      fileSize: fileSize,
     );
-    recents.insert(0, newItem);
-    print("Item adicionado no topo: Chave: '$uniqueKey', Path: ${newItem.filePath} - ${newItem.lastOpened}");
+
+    // Remove o item se já existir (baseado na uniqueKeyForPersistence)
+    recents.removeWhere((item) => item.uniqueKeyForPersistence == newItem.uniqueKeyForPersistence);
+    recents.insert(0, newItem); // Adiciona/move para o topo
 
     if (recents.length > _maxRecents) {
       recents = recents.sublist(0, _maxRecents);
     }
 
     final List<String> recentPdfsJson =
-        recents.map((item) => jsonEncode(item.toJson())).toList();
+        recents.map((item) => jsonEncode(item.toJson())).toList(); // Salva sem senha no shared_prefs
     await prefs.setStringList(_recentsKey, recentPdfsJson);
-    print("Lista de recentes salva. Total: ${recents.length}");
+
+    // Salva a senha no secure storage se fornecida
+    if (password != null && password.isNotEmpty) {
+      try {
+        await _secureStorage.write(key: _getSecureStorageKey(newItem), value: password);
+        print("Senha salva no secure storage para: ${newItem.fileName}");
+      } catch (e) {
+        print("Erro ao salvar senha no secure_storage: $e");
+      }
+    } else {
+      // Se não há senha (ou foi removida), garante que não há senha antiga no secure storage
+      try {
+        await _secureStorage.delete(key: _getSecureStorageKey(newItem));
+      } catch (e) {
+        print("Erro ao deletar senha antiga do secure_storage: $e");
+      }
+    }
   }
 
-  Future<void> removeSpecificRecent(
-    String fileName,
-    String? originalIdentifier,
-    int? fileSize
-  ) async {
+  // Carrega a senha para um item recente específico
+  Future<String?> getPasswordForRecentItem(RecentPdfItem item) async {
+    try {
+      return await _secureStorage.read(key: _getSecureStorageKey(item));
+    } catch (e) {
+      print("Erro ao ler senha do secure_storage para ${item.fileName}: $e");
+      return null;
+    }
+  }
+
+  Future<void> removeSpecificRecent(RecentPdfItem itemToRemove) async {
     final prefs = await SharedPreferences.getInstance();
     List<RecentPdfItem> recents = await getRecentPdfs();
-    final String uniqueKeyToRemove = originalIdentifier ?? (fileSize != null ? "${fileName}_$fileSize" : fileName);
 
-    recents.removeWhere((item) {
-      final String itemKey = item.originalIdentifier ?? (item.fileSize != null ? "${item.fileName}_${item.fileSize}" : item.fileName);
-      return itemKey == uniqueKeyToRemove;
-    });
+    recents.removeWhere((item) => item.uniqueKeyForPersistence == itemToRemove.uniqueKeyForPersistence);
 
     final List<String> recentPdfsJson =
         recents.map((item) => jsonEncode(item.toJson())).toList();
     await prefs.setStringList(_recentsKey, recentPdfsJson);
-    print("Item com chave '$uniqueKeyToRemove' removido. Nova lista salva.");
+
+    // Também remove a senha do secure storage
+    try {
+      await _secureStorage.delete(key: _getSecureStorageKey(itemToRemove));
+      print("Senha removida do secure storage para: ${itemToRemove.fileName}");
+    } catch (e) {
+      print("Erro ao deletar senha do secure_storage ao remover recente: $e");
+    }
   }
 
   Future<void> clearAllRecentPdfs() async {
     final prefs = await SharedPreferences.getInstance();
+    List<RecentPdfItem> recents = await getRecentPdfs(); // Pega a lista antes de limpar
     await prefs.remove(_recentsKey);
+
+    // Limpa todas as senhas associadas do secure storage
+    for (var item in recents) {
+      try {
+        await _secureStorage.delete(key: _getSecureStorageKey(item));
+      } catch (e) {
+        // Ignora erros individuais aqui para tentar limpar o máximo possível
+        print("Erro ao limpar senha do secure_storage para ${item.fileName}: $e");
+      }
+    }
+    print("Todas as senhas de recentes foram removidas do secure storage.");
   }
 }
