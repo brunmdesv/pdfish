@@ -251,9 +251,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Color(0xFF000000),
-                Color(0xFF111111),
-                Color(0xFF222222),
+                Colors.redAccent,
+                Color(0xFFE53935),
+                Color(0xFFC62828),
               ],
             ),
           ),
@@ -272,13 +272,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           if (_recentPdfsList.isNotEmpty && !_isLoadingRecents)
             Container(
               margin: const EdgeInsets.only(right: 16),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.2)),
-              ),
               child: IconButton(
-                icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white),
+                icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white, size: 24),
                 tooltip: 'Limpar Todos os Recentes',
                 onPressed: () async {
                   final confirm = await showDialog<bool>(
@@ -347,6 +342,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ],
       ),
       drawer: Drawer(
+        backgroundColor: Colors.transparent,
         child: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -361,59 +357,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               stops: [0.0, 0.3, 0.7, 1.0],
             ),
           ),
-          child: Column(
-            children: [
-              DrawerHeader(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0xFFFF6B6B),
-                      blurRadius: 12,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
+          child: SafeArea(
+            child: Column(
+              children: [
+                // Espaço no topo para substituir o cabeçalho
+                const SizedBox(height: 16),
+                
+                // Itens do menu
+                ListTile(
+                  leading: const Icon(Icons.home, color: Colors.white, size: 24),
+                  title: const Text('Início', style: TextStyle(color: Colors.white, fontSize: 16)),
+                  onTap: () {
+                    Navigator.pop(context);
+                  },
                 ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset('assets/images/logo.png', width: 60, height: 60),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'PDFish',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ],
-                  ),
+                ListTile(
+                  leading: const Icon(Icons.settings, color: Colors.white, size: 24),
+                  title: const Text('Configurações', style: TextStyle(color: Colors.white, fontSize: 16)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    // Navegação futura para tela de configurações
+                  },
                 ),
-              ),
-              // Adicione aqui os itens do menu futuramente
-              ListTile(
-                leading: const Icon(Icons.home, color: Colors.white),
-                title: const Text('Início', style: TextStyle(color: Colors.white)),
-                onTap: () {
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings, color: Colors.white),
-                title: const Text('Configurações', style: TextStyle(color: Colors.white)),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Navegação futura para tela de configurações
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -434,6 +401,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: SafeArea(
           child: Column(
             children: [
+              // Espaço entre o AppBar e o conteúdo
+              const SizedBox(height: 5),
+              
               // Content
               Expanded(
                 child: SlideTransition(
@@ -459,7 +429,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 24),
+                                const SizedBox(height: 5),
                                 Text(
                                   'Carregando seus documentos...',
                                   style: TextStyle(
@@ -501,7 +471,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                           color: Color(0xFFFF6B6B),
                                         ),
                                       ),
-                                      const SizedBox(height: 32),
+                                      const SizedBox(height: 5),
                                       const Text(
                                         'Nenhum documento ainda',
                                         style: TextStyle(
@@ -511,7 +481,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                           letterSpacing: -0.3,
                                         ),
                                       ),
-                                      const SizedBox(height: 16),
+                                      const SizedBox(height: 5),
                                       Text(
                                         'Comece sua jornada selecionando um arquivo PDF do seu dispositivo. Seus documentos aparecerão aqui para acesso rápido.',
                                         textAlign: TextAlign.center,
@@ -526,7 +496,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 ),
                               )
                             : ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(24, 0, 24, 120),
+                                padding: const EdgeInsets.fromLTRB(24, 5, 24, 120),
                                 itemCount: _recentPdfsList.length,
                                 itemBuilder: (context, index) {
                                   final recentItem = _recentPdfsList[index];
@@ -594,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                                   }
                                                 },
                                                 child: Padding(
-                                                  padding: const EdgeInsets.all(20),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                                                   child: Row(
                                                     children: [
                                                       Expanded(
@@ -687,18 +657,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: Container(
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
+              colors: [Colors.redAccent, Color(0xFFE53935), Color(0xFFC62828)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFFF6B6B).withOpacity(0.4),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(14),
           ),
           child: FloatingActionButton.extended(
             onPressed: _pickAndOpenPdf,
@@ -717,7 +680,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

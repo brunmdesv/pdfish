@@ -25,6 +25,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   int? currentPage = 0;
   bool isReady = false;
   String errorMessage = '';
+  bool _isLandscape = false; // Controla a orientação do PDF
 
   String? _currentPassword;
   bool _isLoading = true;
@@ -194,12 +195,25 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             },
           ),
           actions: <Widget>[
+            // Botão para alternar a orientação do PDF
+            IconButton(
+              icon: Icon(_isLandscape ? Icons.screen_rotation : Icons.screen_rotation_alt),
+              tooltip: _isLandscape ? 'Mudar para orientação vertical' : 'Mudar para orientação horizontal',
+              onPressed: () {
+                setState(() {
+                  _isLandscape = !_isLandscape;
+                  // Força a reconstrução do PDFView
+                  _pdfViewKey = UniqueKey();
+                });
+              },
+            ),
             if (isReady && pages != null && pages! > 0 && currentPage != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Center(
                   child: Text('${currentPage! + 1}/$pages',
-                      style: const TextStyle(fontSize: 16)),
+                    style: const TextStyle(fontSize: 14),
+                  ),
                 ),
               ),
           ],
@@ -211,13 +225,15 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               filePath: widget.filePath,
               password: _currentPassword,
               enableSwipe: true,
-              swipeHorizontal: false,
+              swipeHorizontal: _isLandscape, // Alterna entre orientação horizontal e vertical
               autoSpacing: true,
               pageFling: true,
               pageSnap: true,
-              defaultPage: currentPage!,
-              fitPolicy: FitPolicy.BOTH,
+              defaultPage: currentPage ?? 0,
+              fitPolicy: FitPolicy.WIDTH, // Melhora a qualidade focando na largura
               preventLinkNavigation: false,
+              // Configurações para melhorar a qualidade de renderização
+              fitEachPage: true,
               onRender: (pagesCount) {
                 if (mounted) {
                   setState(() {
