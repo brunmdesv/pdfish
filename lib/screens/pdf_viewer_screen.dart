@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Para SystemNavigator
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 
 class PdfViewerScreen extends StatefulWidget {
   final String filePath;
   final String? initialPasswordAttempt;
+  final bool fromIntent; // Indica se o PDF foi aberto a partir de um intent externo
 
   const PdfViewerScreen({
     super.key,
     required this.filePath,
     this.initialPasswordAttempt,
+    this.fromIntent = false, // Por padrão, não é de intent externo
   });
 
   @override
@@ -157,17 +160,17 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: true, // Permite o pop normal
+      canPop: true,
       onPopInvoked: (didPop) {
         if (didPop) {
-          // Este callback é chamado DEPOIS que o pop ocorreu ou está prestes a ocorrer.
-          // O valor que o `then` na HomeScreen recebe é o que foi passado para `Navigator.of(context).pop(VALOR)`.
-          // Se o pop é por gesto de voltar do sistema, o valor é `null` por padrão.
-          // O botão de voltar da AppBar já chama `pop` com `_successfulPasswordUsed`.
-          // Se o usuário usar o gesto de voltar do Android, e não tivermos interceptado
-          // para passar `_successfulPasswordUsed`, o `then` na HomeScreen receberá `null`.
-          // A HomeScreen já tem uma lógica para lidar com `null` no `returnedPassword`.
-          print("PopScope onPopInvoked. _successfulPasswordUsed: '$_successfulPasswordUsed'");
+          print("PopScope onPopInvoked. _successfulPasswordUsed: '$_successfulPasswordUsed', fromIntent: ${widget.fromIntent}");
+          
+          // Se o PDF foi aberto a partir de um intent externo e o usuário está voltando,
+          // precisamos garantir que o app seja fechado completamente
+          if (widget.fromIntent) {
+            print("Fechando o app após visualização de PDF de intent externo");
+            // O sistema já está lidando com o pop, então não precisamos fazer nada aqui
+          }
         }
       },
       child: Scaffold(
@@ -176,9 +179,18 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () {
-              // Ao pressionar o botão de voltar da AppBar, passamos a senha que funcionou.
-              // Se nenhuma funcionou ou o PDF não era protegido, _successfulPasswordUsed será "".
-              Navigator.of(context).pop(_successfulPasswordUsed);
+              if (widget.fromIntent) {
+                // Se veio de intent externo, fecha o app completamente
+                print("Fechando o app após visualização de PDF de intent externo (botão voltar)");
+                Navigator.of(context).pop(_successfulPasswordUsed);
+                // Adiciona um pequeno atraso antes de fechar o app para garantir que o pop seja processado
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  SystemNavigator.pop(); // Fecha o app completamente
+                });
+              } else {
+                // Comportamento normal - volta para a tela anterior com a senha usada
+                Navigator.of(context).pop(_successfulPasswordUsed);
+              }
             },
           ),
           actions: <Widget>[
