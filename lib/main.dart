@@ -1,16 +1,21 @@
-// pdfish/lib/main.dart
+// lib/main.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:pdfish/providers/theme_provider.dart';
+import 'package:pdfish/themes/app_themes.dart';
+import 'package:provider/provider.dart';
+
+// Seus imports de telas
+import 'package:pdfish/screens/main_layout_screen.dart';
+import 'package:pdfish/screens/pdf_viewer_screen.dart';
+import 'package:pdfish/services/recent_pdfs_service.dart'; // Embora não usado diretamente aqui, bom manter se PdfViewerScreen usa
+
+// Imports de permissão e device_info
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
-// Removido: import 'package:pdfish/screens/home_screen.dart';
-import 'package:pdfish/screens/main_layout_screen.dart'; // ADICIONADO
-import 'package:pdfish/screens/pdf_viewer_screen.dart';
-import 'package:pdfish/services/recent_pdfs_service.dart';
-import 'package:pdfish/widgets/custom_app_bar.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,9 +24,15 @@ void main() async {
   final PlatformChannel platformChannelHandler = PlatformChannel();
   final String? initialFilePath = await platformChannelHandler.getInitialFilePath();
 
-  runApp(PdfishApp(initialPdfPath: initialFilePath));
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeNotifier(),
+      child: PdfishApp(initialPdfPath: initialFilePath),
+    ),
+  );
 }
 
+// Canal de plataforma para receber o caminho do arquivo inicial
 class PlatformChannel {
   static const platform = MethodChannel('com.example.pdfish/file_intent');
 
@@ -48,7 +59,7 @@ class PdfishApp extends StatefulWidget {
 
 class _PdfishAppState extends State<PdfishApp> {
   Widget? _finalHomeWidget;
-  bool _isLoadingTheme = true;
+  bool _isLoadingInitialSetup = true; // Nome da variável corrigido
 
   @override
   void initState() {
@@ -58,33 +69,52 @@ class _PdfishAppState extends State<PdfishApp> {
 
   Future<void> _determineInitialRoute() async {
     if (widget.initialPdfPath != null && widget.initialPdfPath!.isNotEmpty) {
+      // App aberto via intent com um caminho de arquivo
       bool permissionGranted = await _checkAndRequestStoragePermissionForIntent();
       File file = File(widget.initialPdfPath!);
       bool fileExists = await file.exists();
 
       if (permissionGranted && fileExists) {
+        // Permissão concedida e arquivo existe, mostrar o visualizador
         print("Main: Permissão OK e arquivo existe. Abrindo PDFViewerScreen para: ${widget.initialPdfPath}");
-        setState(() {
-          _finalHomeWidget = _buildPdfViewerFromIntent(widget.initialPdfPath!);
-          _isLoadingTheme = false;
-        });
+        if (mounted) {
+          setState(() {
+            _finalHomeWidget = _buildPdfViewerFromIntent(widget.initialPdfPath!);
+            // _isLoadingInitialSetup será setado para false no final
+          });
+        }
       } else {
+        // Permissão negada para o intent ou arquivo não existe.
+        // Redirecionar para MainLayoutScreen.
         if (!permissionGranted) {
           print("Main: Permissão negada para abrir o arquivo do intent. Redirecionando para MainLayoutScreen.");
         }
         if (!fileExists) {
           print("Main: Arquivo do intent não encontrado: ${widget.initialPdfPath}. Redirecionando para MainLayoutScreen.");
         }
-        setState(() {
-          _finalHomeWidget = const MainLayoutScreen(); // MODIFICADO AQUI
-          _isLoadingTheme = false;
-        });
+        if (mounted) {
+          setState(() {
+            _finalHomeWidget = const MainLayoutScreen();
+             // _isLoadingInitialSetup será setado para false no final
+          });
+        }
       }
     } else {
+      // Abertura normal do app (sem intent de arquivo)
       print("Main: Abertura normal do app. Redirecionando para MainLayoutScreen.");
+      if (mounted) {
+        setState(() {
+          _finalHomeWidget = const MainLayoutScreen();
+           // _isLoadingInitialSetup será setado para false no final
+        });
+      }
+    }
+
+    // Esta linha deve ser alcançada em todos os caminhos lógicos dentro de _determineInitialRoute
+    // e após qualquer setState que defina _finalHomeWidget.
+    if (mounted) {
       setState(() {
-        _finalHomeWidget = const MainLayoutScreen(); // MODIFICADO AQUI
-        _isLoadingTheme = false;
+        _isLoadingInitialSetup = false;
       });
     }
   }
@@ -93,6 +123,7 @@ class _PdfishAppState extends State<PdfishApp> {
     if (!Platform.isAndroid) {
       return true;
     }
+
     try {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
       if (androidInfo.version.sdkInt >= 33) {
@@ -113,6 +144,7 @@ class _PdfishAppState extends State<PdfishApp> {
     return status.isGranted;
   }
 
+  // Método para construir o PdfViewerScreen quando o app é aberto a partir de um arquivo PDF
   Widget _buildPdfViewerFromIntent(String filePath) {
     final file = File(filePath);
     final fileName = filePath.split('/').last;
@@ -125,9 +157,9 @@ class _PdfishAppState extends State<PdfishApp> {
           await recentPdfsService.addOrUpdateRecentPdf(
             filePath,
             fileName,
-            null,
-            await file.length(),
-            null,
+            null, // originalIdentifier
+            await file.length(), // fileSize
+            null, // password
           );
         } else {
           print("Main: Arquivo não encontrado ao tentar adicionar aos recentes (intent): $filePath");
@@ -147,14 +179,21 @@ class _PdfishAppState extends State<PdfishApp> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingTheme || _finalHomeWidget == null) {
+    final themeNotifier = Provider.of<ThemeNotifier>(context);
+
+    if (_isLoadingInitialSetup || _finalHomeWidget == null) { // Variável correta usada aqui
+      // Tela de carregamento inicial, antes mesmo do MaterialApp estar totalmente configurado
       return MaterialApp(
         debugShowCheckedModeBanner: false,
+        themeMode: themeNotifier.themeMode,
+        theme: AppThemes.lightTheme, // Define o tema claro como base
+        darkTheme: AppThemes.darkTheme, // Define o tema escuro
         home: Scaffold(
-          backgroundColor: const Color(0xFF121212),
+          // A cor de fundo do Scaffold será definida pelo tema claro/escuro
+          // e pelo scaffoldBackgroundColor definido em AppThemes
           body: Center(
             child: CircularProgressIndicator(
-              color: Colors.redAccent,
+              // A cor do indicator virá do tema (ProgressIndicatorThemeData)
             ),
           ),
         ),
@@ -163,61 +202,9 @@ class _PdfishAppState extends State<PdfishApp> {
 
     return MaterialApp(
       title: 'PDFish',
-      theme: ThemeData(
-        primarySwatch: Colors.red,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.redAccent,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        fontFamily: 'WDXLLubrifontTC',
-        textTheme: const TextTheme(
-          displayLarge: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
-          displayMedium: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-          // ... outros estilos de texto ...
-          labelLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ).apply(
-            bodyColor: Colors.white,
-            displayColor: Colors.white,
-          ),
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        appBarTheme: const AppBarTheme( // Tema base para AppBar
-          foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: true, // Default para centralizar
-          titleTextStyle: TextStyle( // Estilo base que CustomAppBar pode refinar
-            fontSize: 20, // CustomAppBar usará 24, mas é bom ter um base
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-            fontFamily: 'WDXLLubrifontTC',
-          ),
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          foregroundColor: Colors.white,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.redAccent,
-            foregroundColor: Colors.white,
-            textStyle: const TextStyle(fontFamily: 'WDXLLubrifontTC', fontWeight: FontWeight.w600),
-          ),
-        ),
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          backgroundColor: const Color(0xFF1E1E1E),
-          selectedItemColor: Colors.redAccent,
-          unselectedItemColor: Colors.white60,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, fontFamily: 'WDXLLubrifontTC'),
-          unselectedLabelStyle: const TextStyle(fontSize: 12, fontFamily: 'WDXLLubrifontTC'),
-          type: BottomNavigationBarType.fixed,
-          showUnselectedLabels: true,
-          elevation: 8,
-        ),
-        dialogTheme: DialogTheme(
-          backgroundColor: const Color(0xFF1E1E1E),
-          titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'WDXLLubrifontTC'),
-          contentTextStyle: const TextStyle(color: Colors.white70, fontSize: 16, fontFamily: 'WDXLLubrifontTC'),
-        )
-      ),
+      theme: AppThemes.lightTheme,
+      darkTheme: AppThemes.darkTheme,
+      themeMode: themeNotifier.themeMode,
       debugShowCheckedModeBanner: false,
       home: _finalHomeWidget,
     );

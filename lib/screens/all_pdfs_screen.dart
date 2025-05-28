@@ -1,13 +1,15 @@
 // lib/screens/all_pdfs_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:pdfish/providers/theme_provider.dart'; // IMPORTAR
 import 'package:pdfish/screens/pdf_viewer_screen.dart';
+import 'package:pdfish/widgets/custom_app_bar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart'; // IMPORTAR
 // IMPORTS PARA RECENTES
 import 'package:pdfish/services/recent_pdfs_service.dart';
 import 'package:pdfish/models/recent_pdf_item.dart';
-import 'package:pdfish/widgets/custom_app_bar.dart';
 
 class AllPdfsScreen extends StatefulWidget {
   const AllPdfsScreen({super.key});
@@ -16,7 +18,7 @@ class AllPdfsScreen extends StatefulWidget {
   State<AllPdfsScreen> createState() => _AllPdfsScreenState();
 }
 
-class _AllPdfsScreenState extends State<AllPdfsScreen> 
+class _AllPdfsScreenState extends State<AllPdfsScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   List<FileSystemEntity> _pdfFiles = [];
   List<FileSystemEntity> _filteredPdfFiles = [];
@@ -25,24 +27,19 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
   bool _permissionInitiallyChecked = false;
   String _currentSearchPath = "Nenhum";
   int _totalFilesScanned = 0;
-  
-  // Controllers para animações
+
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
-  
-  // Controller para busca com debounce
+
   final TextEditingController _searchController = TextEditingController();
-  
-  // INSTANCIAR RecentPdfsService
   final RecentPdfsService _recentPdfsService = RecentPdfsService();
 
   @override
   void initState() {
     super.initState();
-    
-    // Inicializar animações
+
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -51,23 +48,20 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
-    
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut)
-    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut));
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.1),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
-    
+
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_permissionInitiallyChecked) {
+      if (mounted && !_permissionInitiallyChecked) { // Adicionado 'mounted'
         _checkAndRequestFullStoragePermission();
       }
     });
-    
-    // Inicializar lista filtrada
     _updateFilteredFiles();
   }
 
@@ -83,13 +77,12 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.resumed && _permissionInitiallyChecked) {
+    if (mounted && state == AppLifecycleState.resumed && _permissionInitiallyChecked) { // Adicionado 'mounted'
       print("AllPdfsScreen: App Resumed. Verificando permissão MANAGE_EXTERNAL_STORAGE novamente.");
       _handlePermissionStatusAfterReturn();
     }
   }
 
-  // Método otimizado para filtrar arquivos
   void _updateFilteredFiles() {
     setState(() {
       if (_searchQuery.isEmpty) {
@@ -102,8 +95,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
         }).toList();
       }
     });
-    
-    // Animar entrada dos resultados
+
     if (_filteredPdfFiles.isNotEmpty) {
       _slideController.reset();
       _slideController.forward();
@@ -111,7 +103,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
   }
 
   Future<void> _handlePermissionStatusAfterReturn() async {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid || !mounted) return; // Adicionado !mounted
     final status = await Permission.manageExternalStorage.status;
     if (status.isGranted) {
       if (_pdfFiles.isEmpty && !_isLoading) {
@@ -130,6 +122,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
   }
 
   Future<void> _checkAndRequestFullStoragePermission() async {
+    if (!mounted) return;
     setState(() {
       _permissionInitiallyChecked = true;
     });
@@ -148,59 +141,45 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
       _findPdfFiles();
     } else {
       print("AllPdfsScreen: MANAGE_EXTERNAL_STORAGE não concedido. Solicitando...");
-      if (mounted) {
+      if (mounted) { // Garantir que o widget ainda está montado
         bool? goToSettings = await _showPermissionDialog();
-        
         if (goToSettings == true) {
-            await Permission.manageExternalStorage.request();
+          await Permission.manageExternalStorage.request();
         } else {
-             if(mounted) {
-                setState(() => _isLoading = false);
-                 _showSnackBar(
-                  'Permissão cancelada. Não é possível listar todos os PDFs.',
-                  color: Colors.grey,
-                );
-             }
+          if (mounted) {
+            setState(() => _isLoading = false);
+            _showSnackBar(
+              'Permissão cancelada. Não é possível listar todos os PDFs.',
+              color: Colors.grey,
+            );
+          }
         }
-      } else {
-          if (mounted) setState(() => _isLoading = false);
       }
     }
   }
 
   Future<bool?> _showPermissionDialog() {
+    // As cores e estilos do AlertDialog virão do DialogTheme global.
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          "Permissão Necessária",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        title: const Text("Permissão Necessária"),
         content: const Text(
           "Para listar todos os PDFs em seu dispositivo, este aplicativo precisa da permissão para 'Gerenciar todos os arquivos'.\n\nVocê será redirecionado para as configurações do sistema para concedê-la.",
-          style: TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(
               "Cancelar",
-              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
             ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFF6B6B),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text(
-              "Ir para Configurações",
-              style: TextStyle(color: Colors.white),
-            ),
+            // ElevatedButton usará o estilo do ElevatedButtonThemeData
+            child: const Text("Ir para Configurações"),
           ),
         ],
       ),
@@ -212,7 +191,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: color ?? const Color(0xFFFF6B6B),
+        backgroundColor: color ?? Theme.of(context).colorScheme.error, // Usa a cor de erro do tema
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
@@ -221,6 +200,8 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
   }
 
   Future<void> _findPdfFiles() async {
+    // ... (lógica de _findPdfFiles permanece a mesma,
+    // mas as saídas de print e a UI de loading já usarão cores do tema)
     if (!mounted) return;
     setState(() {
       _isLoading = true;
@@ -235,11 +216,10 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
 
     try {
       List<Directory> dirsToScan = [];
-      
+      // ... (lógica para determinar dirsToScan)
       final List<Directory>? externalStorageDirs = await getExternalStorageDirectories();
       if (externalStorageDirs != null && externalStorageDirs.isNotEmpty) {
         for (var dir in externalStorageDirs) {
-            print("AllPdfsScreen: getExternalStorageDirectories retornou: ${dir.path}");
             Directory actualDirToScan = dir;
             if (dir.path.contains('/Android/data/')) {
                 List<String> segments = dir.path.split('/');
@@ -249,18 +229,14 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
                      actualDirToScan = Directory('/${segments[1]}/${segments[2]}');
                 }
             }
-             print("AllPdfsScreen: Diretório candidato para escaneamento: ${actualDirToScan.path}");
             if (await actualDirToScan.exists() && !dirsToScan.any((d) => d.path == actualDirToScan.path)) {
                 dirsToScan.add(actualDirToScan);
             }
         }
-      } else {
-         print("AllPdfsScreen: getExternalStorageDirectories() retornou nulo ou vazio.");
       }
 
       Directory downloadDir = Directory('/storage/emulated/0/Download'); 
       if (await downloadDir.exists() && !dirsToScan.any((d) => d.path == downloadDir.path)) {
-        print("AllPdfsScreen: Adicionando diretório de Download manualmente: ${downloadDir.path}");
         dirsToScan.add(downloadDir);
       }
       
@@ -274,13 +250,11 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
             }
         }
         if (await rootOfPrimary.exists() && !dirsToScan.any((d) => d.path == rootOfPrimary.path)) {
-           print("AllPdfsScreen: Adicionando raiz do armazenamento primário: ${rootOfPrimary.path}");
            dirsToScan.add(rootOfPrimary);
         }
       }
 
       if (dirsToScan.isEmpty) {
-        print("AllPdfsScreen: Nenhum diretório válido para escanear foi determinado.");
         if (mounted) {
           setState(() {
             _currentSearchPath = "Nenhum diretório de busca";
@@ -291,7 +265,6 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
         return;
       }
 
-      print("AllPdfsScreen: Diretórios finais para escaneamento: ${dirsToScan.map((d) => d.path).toList()}");
       if (mounted) {
           setState(() {
             _currentSearchPath = dirsToScan.map((d) => d.path).join(",\n");
@@ -313,18 +286,12 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
         _pdfFiles.retainWhere((file) => seenPaths.add(file.path));
       }
 
-      print("AllPdfsScreen: Busca concluída. Total de ${_pdfFiles.length} PDFs encontrados.");
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        
+        setState(() { _isLoading = false; });
         _updateFilteredFiles();
-        
         if (_pdfFiles.isEmpty) {
           _showSnackBar('Nenhum arquivo PDF encontrado no dispositivo após a varredura.');
         } else {
-          // Animar entrada dos resultados
           _slideController.forward();
         }
       }
@@ -336,14 +303,14 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
             _isLoading = false;
             _currentSearchPath = "Erro na busca";
         });
-        _showSnackBar('Erro ao buscar arquivos: $e', color: Colors.red);
+        _showSnackBar('Erro ao buscar arquivos: $e', color: Theme.of(context).colorScheme.error);
       }
     }
   }
 
   Future<List<FileSystemEntity>> _findPdfFilesInDirectoryRecursive(Directory directory) async {
+    // ... (lógica de _findPdfFilesInDirectoryRecursive permanece a mesma)
     final List<FileSystemEntity> pdfFiles = [];
-    print("AllPdfsScreen: [RECURSIVE] Iniciando varredura em ${directory.path}");
     int fileCount = 0;
     int dirCount = 0;
 
@@ -353,11 +320,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
         if (entity is File) {
           fileCount++;
           _totalFilesScanned++;
-          
-          // Atualizar UI periodicamente durante a busca
-          if (_totalFilesScanned % 100 == 0 && mounted) {
-            setState(() {});
-          }
+          if (_totalFilesScanned % 100 == 0 && mounted) { setState(() {}); }
           
           if (entity.path.toLowerCase().endsWith('.pdf')) {
             try {
@@ -367,60 +330,42 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
                     pdfFiles.add(entity);
                   }
               } 
-            } catch (e) {
-              // Silenciosamente ignora erros de stat para arquivos individuais
-            }
+            } catch (e) { /* Silently ignore */ }
           }
         } else if (entity is Directory) {
           dirCount++;
         }
       }
-    } on FileSystemException catch (e) {
-      print("AllPdfsScreen: [RECURSIVE] Erro FileSystemException ao listar em ${e.path ?? directory.path}: ${e.message}.");
-    } catch (e,s) {
-      print("AllPdfsScreen: [RECURSIVE] Erro genérico ao listar em ${directory.path}: $e\n$s.");
-    }
-    
-    print("AllPdfsScreen: [RECURSIVE] Concluída varredura em ${directory.path}. PDFs: ${pdfFiles.length}, Arquivos: $fileCount, Dirs: $dirCount");
+    } catch (e) { /* Silently ignore */ }
     return pdfFiles;
   }
 
   String _formatFileSize(int bytes) {
+    // ... (lógica de _formatFileSize permanece a mesma)
     if (bytes <= 0) return '0 B';
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  // NOVO MÉTODO: PARA ABRIR PDF E ADICIONAR/ATUALIZAR RECENTES
   Future<void> _openPdfAndUpdateRecents(String filePath, String fileName, int fileSize) async {
+    // ... (lógica de _openPdfAndUpdateRecents permanece a mesma)
     if (!mounted) return;
-
-    // 1. Tenta obter uma senha existente para este arquivo
     final tempItemForPasswordLookup = RecentPdfItem(
-        filePath: filePath,
-        fileName: fileName,
-        originalIdentifier: null,
-        fileSize: fileSize,
-        lastOpened: DateTime.now());
+        filePath: filePath, fileName: fileName, originalIdentifier: null,
+        fileSize: fileSize, lastOpened: DateTime.now());
 
     String? existingPassword = await _recentPdfsService.getPasswordForRecentItem(tempItemForPasswordLookup);
-    print("AllPdfsScreen: Para PDF '${fileName}', senha existente no storage: '${existingPassword ?? "nenhuma"}'");
-
-    // 2. Navega para PdfViewerScreen
+    
     final returnedPassword = await Navigator.push<String?>(
       context,
       MaterialPageRoute(
         builder: (context) => PdfViewerScreen(
-          filePath: filePath,
-          initialPasswordAttempt: existingPassword,
+          filePath: filePath, initialPasswordAttempt: existingPassword,
         ),
       ),
     );
 
-    print("AllPdfsScreen: PdfViewerScreen retornou: '${returnedPassword ?? "null"}' para ${fileName}");
-
-    // 3. Processa o resultado e atualiza os recentes
     String? finalPasswordToSave;
     if (returnedPassword != null) {
       finalPasswordToSave = returnedPassword.isNotEmpty ? returnedPassword : null;
@@ -429,106 +374,80 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
     }
 
     await _recentPdfsService.addOrUpdateRecentPdf(
-      filePath,
-      fileName,
-      null,
-      fileSize,
-      finalPasswordToSave,
+      filePath, fileName, null, fileSize, finalPasswordToSave,
     );
-    print("AllPdfsScreen: PDF '${fileName}' adicionado/atualizado nos recentes com senha: '${finalPasswordToSave ?? "nenhuma"}'");
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildSearchBar(ThemeNotifier themeNotifier) {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        gradient: LinearGradient(
-          colors: [
-            Colors.white.withOpacity(0.1),
-            Colors.white.withOpacity(0.05),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: themeNotifier.cardBackgroundColor, // Usa cor do tema para fundo
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: themeNotifier.cardBorderColor, // Usa cor do tema para borda
           width: 1,
         ),
       ),
       child: TextField(
         controller: _searchController,
-        style: const TextStyle(color: Colors.white, fontSize: 16),
+        style: TextStyle(color: themeNotifier.primaryTextColorOnCard, fontSize: 16), // Cor do texto
         decoration: InputDecoration(
           hintText: 'Pesquisar pelo nome do arquivo...',
-          hintStyle: TextStyle(
-            color: Colors.white.withOpacity(0.5),
-            fontSize: 16,
-          ),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            color: Colors.white.withOpacity(0.7),
-            size: 24,
-          ),
+          // hintStyle, prefixIconColor, suffixIconColor virão do InputDecorationTheme
+          prefixIcon: Icon(Icons.search_rounded, size: 24),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: Icon(
-                    Icons.clear_rounded,
-                    color: Colors.white.withOpacity(0.7),
-                  ),
+                  icon: Icon(Icons.clear_rounded),
                   onPressed: () {
                     _searchController.clear();
-                    setState(() {
-                      _searchQuery = '';
-                    });
+                    setState(() => _searchQuery = '');
                     _updateFilteredFiles();
                   },
                 )
               : null,
-          border: InputBorder.none,
+          border: InputBorder.none, // Já definido no tema
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         ),
         onChanged: (value) {
-          setState(() {
-            _searchQuery = value;
-          });
+          setState(() => _searchQuery = value);
           _updateFilteredFiles();
         },
       ),
     );
   }
 
-  Widget _buildLoadingWidget() {
+  Widget _buildLoadingWidget(ThemeNotifier themeNotifier) {
     return FadeTransition(
       opacity: _fadeAnimation,
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
+            Container( // O CircularProgressIndicator já pega a cor do tema
               width: 80,
               height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
+                gradient: LinearGradient( // Mantém o gradiente vermelho para o loader
                   colors: [
-                    const Color(0xFFFF6B6B).withOpacity(0.8),
-                    const Color(0xFFE53935).withOpacity(0.6),
+                    Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                    Theme.of(context).colorScheme.primaryContainer.withOpacity(0.6),
                   ],
                 ),
               ),
-              child: const Center(
+              child: Center(
                 child: CircularProgressIndicator(
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onPrimary, // Cor sobre o primário
                   strokeWidth: 3,
                 ),
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
+            Text(
               "Buscando PDFs no dispositivo...",
               style: TextStyle(
-                color: Colors.white70,
+                color: themeNotifier.secondaryTextColor,
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
@@ -537,7 +456,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
             Text(
               "Arquivos verificados: $_totalFilesScanned",
               style: TextStyle(
-                color: Colors.white.withOpacity(0.5),
+                color: themeNotifier.secondaryTextColor.withOpacity(0.7),
                 fontSize: 14,
               ),
             ),
@@ -547,7 +466,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(ThemeNotifier themeNotifier) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -557,29 +476,23 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
             height: 120,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  Colors.white.withOpacity(0.1),
-                  Colors.white.withOpacity(0.05),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: themeNotifier.cardBackgroundColor,
+              border: Border.all(color: themeNotifier.cardBorderColor, width: 1.5)
             ),
             child: Icon(
               Icons.find_in_page_rounded,
               size: 60,
-              color: Colors.white.withOpacity(0.3),
+              color: themeNotifier.subtleIconColor,
             ),
           ),
           const SizedBox(height: 24),
           Text(
             _searchQuery.isEmpty ? 'Nenhum PDF encontrado' : 'Nenhum PDF encontrado para "$_searchQuery"',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: Colors.white70,
+              color: themeNotifier.primaryTextColorOnCard.withOpacity(0.8),
             ),
           ),
           if (_searchQuery.isEmpty && _pdfFiles.isEmpty && _permissionInitiallyChecked)
@@ -588,10 +501,10 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withOpacity(themeNotifier.isDarkMode ? 0.15 : 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: Colors.orange.withOpacity(0.3),
+                    color: Colors.orange.withOpacity(themeNotifier.isDarkMode ? 0.3 : 0.2),
                     width: 1,
                   ),
                 ),
@@ -600,7 +513,7 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.orange.withOpacity(0.8),
+                    color: Colors.orange.shade700.withOpacity(0.9),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -611,81 +524,64 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
     );
   }
 
-  Widget _buildPdfCard(FileSystemEntity fileEntity, int index) {
+  Widget _buildPdfCard(FileSystemEntity fileEntity, int index, ThemeNotifier themeNotifier) {
     late int fileSize;
     try {
-       if (fileEntity is File) {
-          final fileStat = fileEntity.statSync();
-          fileSize = fileStat.size;
-       } else {
-          fileSize = 0;
-       }
-    } catch(e) {
-        fileSize = -1;
-        debugPrint("Erro ao obter statSync para ${fileEntity.path} no build: $e");
+      fileSize = (fileEntity is File) ? fileEntity.statSync().size : 0;
+    } catch (e) {
+      fileSize = -1;
     }
-    
     final fileName = fileEntity.path.split('/').last;
     final filePath = fileEntity.path;
 
     return SlideTransition(
-      position: _slideAnimation,
+      position: _slideAnimation, // Animações permanecem
       child: FadeTransition(
         opacity: _fadeAnimation,
         child: Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              colors: [
-                Colors.white.withOpacity(0.08),
-                Colors.white.withOpacity(0.03),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.1),
-              width: 1,
-            ),
+            color: themeNotifier.cardBackgroundColor,
+            border: Border.all(color: themeNotifier.cardBorderColor, width: 1),
+            boxShadow: [ // Sombra adaptável
+              BoxShadow(
+                color: themeNotifier.isDarkMode ? Colors.black.withOpacity(0.2) : Colors.grey.withOpacity(0.15),
+                blurRadius: themeNotifier.isDarkMode ? 10 : 6,
+                offset: Offset(0, themeNotifier.isDarkMode ? 5 : 3),
+              ),
+            ],
           ),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
-              splashColor: const Color(0xFFFF6B6B).withOpacity(0.1),
-              highlightColor: const Color(0xFFFF6B6B).withOpacity(0.05),
+              splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              highlightColor: Theme.of(context).colorScheme.primary.withOpacity(0.05),
               onTap: () => _openPdfAndUpdateRecents(filePath, fileName, fileSize),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Row(
                   children: [
-                    Container(
-                      width: 56,
-                      height: 56,
+                    Container( // Ícone PDF com gradiente primário
+                      width: 56, height: 56,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         gradient: LinearGradient(
                           colors: [
-                            const Color(0xFFFF6B6B).withOpacity(0.8),
-                            const Color(0xFFE53935).withOpacity(0.6),
+                            Theme.of(context).colorScheme.primary,
+                            Theme.of(context).colorScheme.primaryContainer,
                           ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                          begin: Alignment.topLeft, end: Alignment.bottomRight,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFFF6B6B).withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                            blurRadius: 8, offset: const Offset(0, 4),
                           ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.picture_as_pdf_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                      child: Icon(Icons.picture_as_pdf_rounded, color: Theme.of(context).colorScheme.onPrimary, size: 28),
                     ),
                     const SizedBox(width: 20),
                     Expanded(
@@ -693,14 +589,10 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            fileName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              height: 1.3,
+                            fileName, maxLines: 2, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: themeNotifier.primaryTextColorOnCard,
+                              fontSize: 16, fontWeight: FontWeight.w600, height: 1.3,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -709,15 +601,14 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.1),
+                                  color: themeNotifier.isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   fileSize >= 0 ? _formatFileSize(fileSize) : "Erro",
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.8),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                                    color: themeNotifier.secondaryTextColor,
+                                    fontSize: 12, fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ),
@@ -725,13 +616,10 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            filePath,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            filePath, maxLines: 1, overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.4),
-                              fontSize: 11,
-                              height: 1.2,
+                              color: themeNotifier.secondaryTextColor.withOpacity(0.6),
+                              fontSize: 11, height: 1.2,
                             ),
                           ),
                         ],
@@ -739,17 +627,12 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
                     ),
                     const SizedBox(width: 12),
                     Container(
-                      width: 32,
-                      height: 32,
+                      width: 32, height: 32,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.1),
+                        color: themeNotifier.isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
                       ),
-                      child: const Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        color: Colors.white30,
-                        size: 16,
-                      ),
+                      child: Icon(Icons.arrow_forward_ios_rounded, color: themeNotifier.subtleIconColor.withOpacity(0.5), size: 16),
                     ),
                   ],
                 ),
@@ -763,148 +646,101 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Pega o ThemeNotifier do Provider
+    final themeNotifier = Provider.of<ThemeNotifier>(context);
+
     return Scaffold(
-      appBar: CustomAppBar( // USANDO O CUSTOM APPBAR
-      titleText: 'Todos os PDFs do Dispositivo',
-      // Se esta tela for parte de uma navegação principal (como é com BottomNavigationBar),
-      // o botão de voltar não aparecerá por padrão, o que é correto.
-      // Se ela fosse empurrada por cima de outra com Navigator.push,
-      // o botão de voltar seria adicionado automaticamente.
-      actions: [
-        Container(
-          margin: const EdgeInsets.only(right: 0), // Pode ajustar ou remover a margem se o visual ficar melhor
-          child: IconButton(
-            icon: const Icon(Icons.refresh_rounded), // Cor virá do tema
-            tooltip: "Recarregar Lista",
-            onPressed: _isLoading ? null : _checkAndRequestFullStoragePermission,
+      appBar: CustomAppBar(
+        titleText: 'Todos os PDFs do Dispositivo',
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 0),
+            child: IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: "Recarregar Lista",
+              onPressed: _isLoading ? null : _checkAndRequestFullStoragePermission,
+            ),
           ),
-        ),
-      ],
-    ),
+        ],
+      ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF000000),
-              Color(0xFF111111),
-              Color(0xFF222222),
-              Color(0xFF1a1a1a),
-            ],
-            stops: [0.0, 0.3, 0.7, 1.0],
-          ),
-        ),
+        // Usa o gradiente do corpo fornecido pelo ThemeNotifier
+        decoration: BoxDecoration(gradient: themeNotifier.bodyGradient),
         child: Column(
           children: [
-            _buildSearchBar(),
-            
+            _buildSearchBar(themeNotifier), // Passa o themeNotifier
             if (_isLoading || (_pdfFiles.isEmpty && _searchQuery.isEmpty))
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
+                    color: themeNotifier.cardBackgroundColor.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.1),
-                      width: 1,
-                    ),
+                    border: Border.all(color: themeNotifier.cardBorderColor.withOpacity(0.5), width: 1),
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.folder_outlined,
-                        color: Colors.white.withOpacity(0.6),
-                        size: 16,
-                      ),
+                      Icon(Icons.folder_outlined, color: themeNotifier.subtleIconColor, size: 16),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           "Buscando em: ${_currentSearchPath.isNotEmpty ? _currentSearchPath : 'não definido'}",
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: themeNotifier.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.w500),
+                          maxLines: 2, overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
-            
-            // Stats bar quando não está carregando e tem arquivos
             if (!_isLoading && _pdfFiles.isNotEmpty)
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF6B6B).withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFFFF6B6B).withOpacity(0.2),
-                    width: 1,
-                  ),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2), width: 1),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        Icon(
-                          Icons.description_rounded,
-                          color: const Color(0xFFFF6B6B).withOpacity(0.8),
-                          size: 16,
-                        ),
+                        Icon(Icons.description_rounded, color: Theme.of(context).colorScheme.primary.withOpacity(0.8), size: 16),
                         const SizedBox(width: 8),
                         Text(
                           "${_pdfFiles.length} PDFs encontrados",
-                          style: TextStyle(
-                            color: const Color(0xFFFF6B6B).withOpacity(0.9),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: TextStyle(color: Theme.of(context).colorScheme.primary.withOpacity(0.9), fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
                     if (_searchQuery.isNotEmpty)
                       Row(
                         children: [
-                          Icon(
-                            Icons.filter_list_rounded,
-                            color: const Color(0xFFFF6B6B).withOpacity(0.8),
-                            size: 16,
-                          ),
+                          Icon(Icons.filter_list_rounded, color: Theme.of(context).colorScheme.primary.withOpacity(0.8), size: 16),
                           const SizedBox(width: 4),
                           Text(
                             "${_filteredPdfFiles.length} filtrados",
-                            style: TextStyle(
-                              color: const Color(0xFFFF6B6B).withOpacity(0.9),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: TextStyle(color: Theme.of(context).colorScheme.primary.withOpacity(0.9), fontSize: 14, fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
                   ],
                 ),
               ),
-            
             Expanded(
               child: _isLoading
-                  ? _buildLoadingWidget()
+                  ? _buildLoadingWidget(themeNotifier) // Passa o themeNotifier
                   : _filteredPdfFiles.isEmpty
-                      ? _buildEmptyState()
+                      ? _buildEmptyState(themeNotifier) // Passa o themeNotifier
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                           itemCount: _filteredPdfFiles.length,
                           physics: const BouncingScrollPhysics(),
                           itemBuilder: (context, index) {
-                            return _buildPdfCard(_filteredPdfFiles[index], index);
+                            return _buildPdfCard(_filteredPdfFiles[index], index, themeNotifier); // Passa o themeNotifier
                           },
                         ),
             ),

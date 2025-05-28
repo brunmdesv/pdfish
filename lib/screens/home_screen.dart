@@ -7,6 +7,8 @@ import 'package:pdfish/screens/pdf_viewer_screen.dart';
 import 'package:pdfish/models/recent_pdf_item.dart';
 import 'package:pdfish/services/recent_pdfs_service.dart';
 import 'package:pdfish/widgets/custom_app_bar.dart';
+import 'package:provider/provider.dart';
+import 'package:pdfish/providers/theme_provider.dart';
 
 // Imports para permissão
 import 'package:permission_handler/permission_handler.dart';
@@ -352,104 +354,96 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  // lib/screens/home_screen.dart
+
+// ... (imports e todo o resto da classe _HomeScreenState ANTES do método build)
+
   @override
   Widget build(BuildContext context) {
+    final themeNotifier = Provider.of<ThemeNotifier>(context);
     return Scaffold(
-      appBar: CustomAppBar( // USANDO O CUSTOM APPBAR
-      titleText: 'Documentos Recentes',
-      actions: [
-        // Apenas mostra o botão de limpar se houver recentes e não estiver carregando
-        if (_recentPdfsList.isNotEmpty && !_isLoadingRecents)
-          Container(
-            margin: const EdgeInsets.only(right: 8.0), // Adiciona uma pequena margem à direita
-            child: IconButton(
-              icon: const Icon(Icons.delete_sweep_outlined, size: 24), // Cor virá do tema
-              tooltip: 'Limpar Todos os Recentes',
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  barrierColor: Colors.black.withOpacity(0.8),
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                      title: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFF9500).withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(12),
+      appBar: CustomAppBar(
+        titleText: 'Documentos Recentes',
+        actions: [
+          if (_recentPdfsList.isNotEmpty && !_isLoadingRecents)
+            Container(
+              margin: const EdgeInsets.only(right: 8.0),
+              child: IconButton(
+                icon: const Icon(Icons.delete_sweep_outlined, size: 24),
+                tooltip: 'Limpar Todos os Recentes',
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    // barrierColor: Colors.black.withOpacity(0.8), // O tema do diálogo cuidará disso
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        // shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), // Do tema
+                        title: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF9500).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9500)),
                             ),
-                            child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9500)),
-                          ),
-                          const SizedBox(width: 12),
-                          const Text('Limpar Recentes?'),
-                        ],
-                      ),
-                      content: const Text(
-                        'Isso removerá todos os PDFs da lista e suas senhas salvas.',
-                      ),
-                      actions: <Widget>[
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
-                          onPressed: () => Navigator.of(context).pop(false),
+                            const SizedBox(width: 12),
+                            const Text('Limpar Recentes?'), // Estilo do tema
+                          ],
                         ),
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFF4444), Color(0xFFCC0000)],
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
+                        content: const Text(
+                          'Isso removerá todos os PDFs da lista e suas senhas salvas.', // Estilo do tema
+                        ),
+                        actions: <Widget>[
+                          TextButton(
+                            style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: const Text('Limpar Tudo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                            onPressed: () => Navigator.of(context).pop(true),
+                            // A cor do texto do TextButton virá do tema ou pode ser sobrescrita
+                            child: Text('Cancelar', style: TextStyle(color: themeNotifier.secondaryTextColor)),
+                            onPressed: () => Navigator.of(context).pop(false),
                           ),
-                        ),
-                      ],
-                    );
-                  },
-                );
-                if (confirm == true) {
-                  await _recentPdfsService.clearAllRecentPdfs();
-                  _loadRecentPdfs();
-                }
-              },
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient( // Gradiente para o botão de confirmação
+                                colors: [Theme.of(context).colorScheme.error, Theme.of(context).colorScheme.errorContainer.withOpacity(0.7)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: Text('Limpar Tudo', style: TextStyle(color: Theme.of(context).colorScheme.onError, fontWeight: FontWeight.w600)),
+                              onPressed: () => Navigator.of(context).pop(true),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                  if (confirm == true) {
+                    await _recentPdfsService.clearAllRecentPdfs();
+                    _loadRecentPdfs();
+                  }
+                },
+              ),
             ),
-          ),
-      ],
-    ),
-      // DRAWER FOI REMOVIDO
+        ],
+      ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF000000),
-              Color(0xFF111111),
-              Color(0xFF222222),
-              Color(0xFF1a1a1a),
-            ],
-            stops: [0.0, 0.3, 0.7, 1.0],
-          ),
-        ),
+        decoration: BoxDecoration(gradient: themeNotifier.bodyGradient),
         child: SafeArea(
           child: Column(
             children: [
               const SizedBox(height: 5),
               if (!_initialPermissionCheckDone && Platform.isAndroid)
-                const Expanded(child: Center(child: CircularProgressIndicator(color: Colors.redAccent))),
+                const Expanded(child: Center(child: CircularProgressIndicator())), // Cor do tema
               if (_initialPermissionCheckDone || !Platform.isAndroid)
                 Expanded(
                   child: SlideTransition(
@@ -465,21 +459,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                     width: 60,
                                     height: 60,
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.1),
+                                      color: themeNotifier.isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
                                       borderRadius: BorderRadius.circular(30),
                                     ),
                                     child: const Center(
-                                      child: CircularProgressIndicator(
-                                        color: Color(0xFFFF6B6B),
-                                        strokeWidth: 3,
-                                      ),
+                                      child: CircularProgressIndicator(strokeWidth: 3), // Cor do tema
                                     ),
                                   ),
-                                  const SizedBox(height: 5),
+                                  const SizedBox(height: 16),
                                   Text(
                                     'Carregando seus documentos...',
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.7),
+                                      color: themeNotifier.secondaryTextColor,
                                       fontSize: 16,
                                     ),
                                   ),
@@ -499,41 +490,41 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                           decoration: BoxDecoration(
                                             gradient: LinearGradient(
                                               colors: [
-                                                const Color(0xFFFF6B6B).withOpacity(0.2),
-                                                const Color(0xFFFF8E53).withOpacity(0.1),
+                                                Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                                                Theme.of(context).colorScheme.secondary.withOpacity(0.1), // Pode ser primaryContainer
                                               ],
                                               begin: Alignment.topLeft,
                                               end: Alignment.bottomRight,
                                             ),
                                             shape: BoxShape.circle,
                                             border: Border.all(
-                                              color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                                              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                                               width: 2,
                                             ),
                                           ),
-                                          child: const Icon(
+                                          child: Icon(
                                             Icons.folder_open_outlined,
                                             size: 60,
-                                            color: Color(0xFFFF6B6B),
+                                            color: Theme.of(context).colorScheme.primary,
                                           ),
                                         ),
-                                        const SizedBox(height: 5),
-                                        const Text(
+                                        const SizedBox(height: 16),
+                                        Text(
                                           'Nenhum documento ainda',
                                           style: TextStyle(
                                             fontSize: 24,
                                             fontWeight: FontWeight.w700,
-                                            color: Colors.white,
+                                            color: themeNotifier.primaryTextColorOnCard, // Use a cor primária do texto para cards/elementos
                                             letterSpacing: -0.3,
                                           ),
                                         ),
-                                        const SizedBox(height: 5),
+                                        const SizedBox(height: 8),
                                         Text(
                                           'Comece sua jornada selecionando um arquivo PDF do seu dispositivo. Seus documentos aparecerão aqui para acesso rápido.',
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             fontSize: 16,
-                                            color: Colors.white.withOpacity(0.7),
+                                            color: themeNotifier.secondaryTextColor,
                                             height: 1.6,
                                           ),
                                         ),
@@ -542,9 +533,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                   ),
                                 )
                               : ListView.builder(
-                                  padding: const EdgeInsets.fromLTRB(24, 5, 24, 120), // Espaço para o FAB
+                                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 100), // Aumentado padding inferior para FAB
                                   itemCount: _recentPdfsList.length,
-                                  itemBuilder: (context, index) {
+                                  itemBuilder: (BuildContext context, int index) {
                                     final recentItem = _recentPdfsList[index];
                                     return TweenAnimationBuilder<double>(
                                       tween: Tween(begin: 0.0, end: 1.0),
@@ -558,24 +549,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                             child: Container(
                                               margin: const EdgeInsets.only(bottom: 16),
                                               decoration: BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  colors: [
-                                                    Colors.white.withOpacity(0.1),
-                                                    Colors.white.withOpacity(0.05),
-                                                  ],
-                                                  begin: Alignment.topLeft,
-                                                  end: Alignment.bottomRight,
-                                                ),
+                                                color: themeNotifier.cardBackgroundColor,
                                                 borderRadius: BorderRadius.circular(20),
-                                                border: Border.all(
-                                                  color: Colors.white.withOpacity(0.1),
-                                                  width: 1,
-                                                ),
+                                                border: Border.all(color: themeNotifier.cardBorderColor, width: 1),
                                                 boxShadow: [
                                                   BoxShadow(
-                                                    color: Colors.black.withOpacity(0.3),
-                                                    blurRadius: 20,
-                                                    offset: const Offset(0, 8),
+                                                    color: themeNotifier.isDarkMode ? Colors.black.withOpacity(0.25) : Colors.grey.withOpacity(0.15),
+                                                    blurRadius: themeNotifier.isDarkMode ? 15 : 8,
+                                                    offset: Offset(0, themeNotifier.isDarkMode ? 6 : 4),
                                                   ),
                                                 ],
                                               ),
@@ -583,6 +564,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                                 color: Colors.transparent,
                                                 child: InkWell(
                                                   borderRadius: BorderRadius.circular(20),
+                                                  splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                                  highlightColor: Theme.of(context).colorScheme.primary.withOpacity(0.05),
                                                   onTap: () async {
                                                     final file = File(recentItem.filePath);
                                                     if (await file.exists()) {
@@ -592,13 +575,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                                         ScaffoldMessenger.of(context).showSnackBar(
                                                           SnackBar(
                                                             content: Text('Arquivo "${recentItem.fileName}" não encontrado no cache ou local original.'),
-                                                            backgroundColor: const Color(0xFFFF9500),
-                                                            behavior: SnackBarBehavior.floating,
-                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                                            margin: const EdgeInsets.all(16),
+                                                            backgroundColor: Theme.of(context).colorScheme.errorContainer, // Usa cor de erro do tema
                                                             action: SnackBarAction(
                                                               label: 'REMOVER',
-                                                              textColor: Colors.white,
+                                                              textColor: Theme.of(context).colorScheme.onErrorContainer, // Cor de texto sobre erro
                                                               onPressed: () async {
                                                                 await _recentPdfsService.removeSpecificRecent(recentItem);
                                                                 _loadRecentPdfs();
@@ -610,7 +590,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                                     }
                                                   },
                                                   child: Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                                                     child: Row(
                                                       children: [
                                                         Expanded(
@@ -621,45 +601,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                                                 recentItem.fileName,
                                                                 maxLines: 2,
                                                                 overflow: TextOverflow.ellipsis,
-                                                                style: const TextStyle(
-                                                                  fontSize: 18,
+                                                                style: TextStyle(
+                                                                  fontSize: 17,
                                                                   fontWeight: FontWeight.w600,
-                                                                  color: Colors.white,
-                                                                  letterSpacing: -0.2,
+                                                                  color: themeNotifier.primaryTextColorOnCard,
                                                                 ),
                                                               ),
-                                                              const SizedBox(height: 8),
+                                                              const SizedBox(height: 10),
                                                               Row(
                                                                 children: [
                                                                   Container(
                                                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                                                     decoration: BoxDecoration(
-                                                                      color: const Color(0xFFFF6B6B).withOpacity(0.2),
+                                                                      color: Theme.of(context).colorScheme.primary.withOpacity(themeNotifier.isDarkMode ? 0.25 : 0.15),
                                                                       borderRadius: BorderRadius.circular(8),
                                                                     ),
                                                                     child: Text(
                                                                       _formatRecentDate(recentItem.lastOpened),
-                                                                      style: const TextStyle(
+                                                                      style: TextStyle(
                                                                         fontSize: 12,
-                                                                        color: Color(0xFFFF6B6B),
+                                                                        color: Theme.of(context).colorScheme.primary,
                                                                         fontWeight: FontWeight.w500,
                                                                       ),
                                                                     ),
                                                                   ),
-                                                                  const SizedBox(width: 12),
+                                                                  const SizedBox(width: 10),
                                                                   Container(
                                                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                                                     decoration: BoxDecoration(
-                                                                      color: Colors.white.withOpacity(0.1),
+                                                                      color: themeNotifier.isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
                                                                       borderRadius: BorderRadius.circular(8),
                                                                     ),
                                                                     child: Text(
                                                                       _formatFileSize(recentItem.fileSize),
-                                                                      style: TextStyle(
-                                                                        fontSize: 12,
-                                                                        color: Colors.white.withOpacity(0.7),
-                                                                        fontWeight: FontWeight.w500,
-                                                                      ),
+                                                                      style: TextStyle(fontSize: 12, color: themeNotifier.secondaryTextColor, fontWeight: FontWeight.w500),
                                                                     ),
                                                                   ),
                                                                 ],
@@ -667,15 +642,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                                                             ],
                                                           ),
                                                         ),
+                                                        const SizedBox(width: 12),
                                                         Container(
-                                                          padding: const EdgeInsets.all(8),
+                                                          padding: const EdgeInsets.all(10),
                                                           decoration: BoxDecoration(
-                                                            color: Colors.white.withOpacity(0.1),
+                                                            color: themeNotifier.isDarkMode ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04),
                                                             borderRadius: BorderRadius.circular(12),
                                                           ),
                                                           child: Icon(
                                                             Icons.arrow_forward_ios,
-                                                            color: Colors.white.withOpacity(0.7),
+                                                            color: themeNotifier.subtleIconColor,
                                                             size: 16,
                                                           ),
                                                         ),
@@ -702,17 +678,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         scale: _fabAnimation,
         child: Container(
           decoration: BoxDecoration(
+            // O gradiente do FAB permanece o mesmo, pois é uma cor de destaque da marca
             gradient: const LinearGradient(
               colors: [Colors.redAccent, Color(0xFFE53935), Color(0xFFC62828)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(14), // Ajuste para o FloatingActionButton.extended
+            borderRadius: BorderRadius.circular(16), // Para FloatingActionButton.extended
+            boxShadow: [ // Adiciona uma sombra sutil que se adapta ao tema
+               BoxShadow(
+                color: themeNotifier.isDarkMode ? Colors.black.withOpacity(0.4) : Colors.grey.withOpacity(0.3),
+                blurRadius: 12,
+                spreadRadius: 1,
+                offset: const Offset(0, 4),
+              ),
+            ]
           ),
           child: FloatingActionButton.extended(
             onPressed: _pickAndOpenPdf,
-            backgroundColor: Colors.transparent, // O gradiente do container faz o efeito
-            elevation: 0, // O container pode ter sombra se desejado
+            backgroundColor: Colors.transparent,
+            elevation: 0, // A sombra é controlada pelo Container
             icon: const Icon(Icons.add, color: Colors.white, size: 24),
             label: const Text(
               'Abrir PDF',
