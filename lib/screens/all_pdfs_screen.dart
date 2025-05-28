@@ -6,7 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 // IMPORTS PARA RECENTES
 import 'package:pdfish/services/recent_pdfs_service.dart';
-import 'package:pdfish/models/recent_pdf_item.dart'; // Para construir o RecentPdfItem
+import 'package:pdfish/models/recent_pdf_item.dart';
+import 'package:pdfish/widgets/custom_app_bar.dart';
 
 class AllPdfsScreen extends StatefulWidget {
   const AllPdfsScreen({super.key});
@@ -763,34 +764,23 @@ class _AllPdfsScreenState extends State<AllPdfsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Todos os PDFs do Dispositivo'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.redAccent,
-                Color(0xFFE53935),
-                Color(0xFFC62828),
-              ],
-            ),
+      appBar: CustomAppBar( // USANDO O CUSTOM APPBAR
+      titleText: 'Todos os PDFs do Dispositivo',
+      // Se esta tela for parte de uma navegação principal (como é com BottomNavigationBar),
+      // o botão de voltar não aparecerá por padrão, o que é correto.
+      // Se ela fosse empurrada por cima de outra com Navigator.push,
+      // o botão de voltar seria adicionado automaticamente.
+      actions: [
+        Container(
+          margin: const EdgeInsets.only(right: 0), // Pode ajustar ou remover a margem se o visual ficar melhor
+          child: IconButton(
+            icon: const Icon(Icons.refresh_rounded), // Cor virá do tema
+            tooltip: "Recarregar Lista",
+            onPressed: _isLoading ? null : _checkAndRequestFullStoragePermission,
           ),
         ),
-        actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              icon: const Icon(Icons.refresh_rounded),
-              tooltip: "Recarregar Lista",
-              onPressed: _isLoading ? null : _checkAndRequestFullStoragePermission,
-            ),
-          ),
-        ],
-      ),
+      ],
+    ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
